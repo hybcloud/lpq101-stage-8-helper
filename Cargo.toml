@@ -1,8 +1,8 @@
 [package]
 name = "ludi-pq-stage-8-tool"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
-description = "ludi-pq-stage-8-tool: native Direct2D JMS overlay for Ludibrium Party Quest Stage 8"
+description = "Native Direct2D constant-weight Gray-code overlay for Ludibrium Party Quest Stage 8"
 
 [dependencies]
 anyhow = "1.0"

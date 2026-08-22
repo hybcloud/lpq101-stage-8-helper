@@ -20,7 +20,10 @@ const CHAIR_POSITIONS: [(u32, u32); 9] = [
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OverlayVisual {
     Setup,
-    State(u16),
+    State {
+        occupied_mask: u16,
+        movement: Option<(u8, u8)>,
+    },
 }
 
 pub struct OverlayImage {
@@ -65,9 +68,20 @@ impl OverlayImage {
             pixel[3] = 1;
         }
         for (index, &(origin_x, origin_y)) in CHAIR_POSITIONS.iter().enumerate() {
-            let occupied = match visual {
-                OverlayVisual::Setup => None,
-                OverlayVisual::State(mask) => Some(mask & (1 << index) != 0),
+            let tint = match visual {
+                OverlayVisual::Setup => ChairTint::Setup,
+                OverlayVisual::State {
+                    occupied_mask,
+                    movement,
+                } => {
+                    let box_number = index as u8 + 1;
+                    match movement {
+                        Some((source, _)) if box_number == source => ChairTint::Source,
+                        Some((_, target)) if box_number == target => ChairTint::Target,
+                        _ if occupied_mask & (1 << index) != 0 => ChairTint::Occupied,
+                        _ => ChairTint::Empty,
+                    }
+                }
             };
             for y in origin_y..origin_y + CHAIR_HEIGHT {
                 for x in origin_x..origin_x + CHAIR_WIDTH {
@@ -82,10 +96,12 @@ impl OverlayImage {
 
                     let gray =
                         ((red as u32 * 299 + green as u32 * 587 + blue as u32 * 114) / 1000) as u8;
-                    let (tinted_red, tinted_green, tinted_blue) = match occupied {
-                        None => (gray, gray, gray),
-                        Some(true) => (scale(gray, 28), gray, scale(gray, 92)),
-                        Some(false) => (gray, scale(gray, 46), scale(gray, 55)),
+                    let (tinted_red, tinted_green, tinted_blue) = match tint {
+                        ChairTint::Setup => (gray, gray, gray),
+                        ChairTint::Empty => (scale(gray, 112), scale(gray, 112), scale(gray, 112)),
+                        ChairTint::Occupied => (scale(gray, 36), scale(gray, 188), gray),
+                        ChairTint::Source => (gray, scale(gray, 44), scale(gray, 44)),
+                        ChairTint::Target => (scale(gray, 36), gray, scale(gray, 68)),
                     };
 
                     // Direct2D and UpdateLayeredWindow both expect premultiplied BGRA.
@@ -98,6 +114,15 @@ impl OverlayImage {
         }
         output
     }
+}
+
+#[derive(Clone, Copy)]
+enum ChairTint {
+    Setup,
+    Occupied,
+    Empty,
+    Source,
+    Target,
 }
 
 fn scale(value: u8, factor: u8) -> u8 {
@@ -116,9 +141,12 @@ mod tests {
     fn embedded_layout_composes_gray_and_colored_images() {
         let image = OverlayImage::load().unwrap();
         let gray = image.compose_bgra(OverlayVisual::Setup);
-        let colored = image.compose_bgra(OverlayVisual::State(0b000_101_101));
+        let transition = image.compose_bgra(OverlayVisual::State {
+            occupied_mask: 0b001_010_111,
+            movement: Some((4, 7)),
+        });
         assert_eq!(gray.len(), (268 * 119 * 4) as usize);
-        assert_eq!(colored.len(), gray.len());
+        assert_eq!(transition.len(), gray.len());
         assert!(gray.chunks_exact(4).all(|pixel| pixel[3] > 0));
         assert!(
             gray.chunks_exact(4)
@@ -126,14 +154,24 @@ mod tests {
                 .all(|pixel| pixel[0] == pixel[1] && pixel[1] == pixel[2])
         );
         assert!(
-            colored
+            transition
                 .chunks_exact(4)
-                .any(|pixel| pixel[3] > 0 && pixel[1] > pixel[2])
+                .any(|pixel| pixel[3] > 0 && pixel[0] > pixel[1] && pixel[1] > pixel[2])
         );
         assert!(
-            colored
+            transition
                 .chunks_exact(4)
-                .any(|pixel| pixel[3] > 0 && pixel[2] > pixel[1])
+                .any(|pixel| pixel[3] > 0 && pixel[2] > pixel[1] && pixel[2] > pixel[0])
+        );
+        assert!(
+            transition
+                .chunks_exact(4)
+                .any(|pixel| pixel[3] > 0 && pixel[1] > pixel[2] && pixel[1] > pixel[0])
+        );
+        assert!(
+            transition
+                .chunks_exact(4)
+                .any(|pixel| pixel[3] > 0 && pixel[0] == pixel[1] && pixel[1] == pixel[2])
         );
     }
 }

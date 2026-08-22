@@ -5,7 +5,7 @@ compile_error!("ludi-pq-stage-8-tool currently supports Windows only");
 
 mod config;
 mod control;
-mod jms;
+mod gray_code;
 mod overlay;
 mod platform;
 mod render;
@@ -313,7 +313,8 @@ struct NativeApp {
     overlay: Option<OverlayWindow>,
     toast: Option<ToastWindow>,
     ui: ControlUi,
-    states: Vec<jms::JmsState>,
+    states: Vec<gray_code::GrayState>,
+    current_movement: Option<gray_code::Movement>,
     smoke_test: bool,
     settings: SettingsStore,
     hotkeys: Option<GlobalHotkeys>,
@@ -321,7 +322,7 @@ struct NativeApp {
 
 impl NativeApp {
     fn new(module: HINSTANCE) -> Result<Self> {
-        let states = jms::generate_states();
+        let states = gray_code::generate_states();
         let settings = SettingsStore::load();
         Ok(Self {
             module,
@@ -343,6 +344,7 @@ impl NativeApp {
                 pressed: None,
             },
             states,
+            current_movement: None,
             smoke_test: std::env::var_os("LUDI_PQ_STAGE_8_TOOL_SMOKE_TEST").is_some(),
             settings,
             hotkeys: None,
@@ -395,7 +397,7 @@ impl NativeApp {
             CreateWindowExW(
                 ex_style,
                 WINDOW_CLASS,
-                w!("ludi-pq-stage-8-tool · JMS Overlay"),
+                w!("ludi-pq-stage-8-tool · Gray Code Overlay"),
                 style,
                 CW_USEDEFAULT,
                 CW_USEDEFAULT,
@@ -475,7 +477,7 @@ impl NativeApp {
             CreateWindowExW(
                 WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST,
                 WINDOW_CLASS,
-                w!("ludi-pq-stage-8-tool · JMS Step"),
+                w!("ludi-pq-stage-8-tool · Gray Code Move"),
                 WS_POPUP,
                 0,
                 0,
@@ -740,7 +742,12 @@ impl NativeApp {
     fn apply_ui_to_overlay(&mut self) {
         let visual = match (self.ui.positioning, self.ui.state_index) {
             (true, _) | (_, None) => OverlayVisual::Setup,
-            (false, Some(index)) => OverlayVisual::State(self.states[index].occupied_mask()),
+            (false, Some(index)) => OverlayVisual::State {
+                occupied_mask: self.states[index].occupied_mask(),
+                movement: self
+                    .current_movement
+                    .map(|movement| (movement.from_box, movement.to_box)),
+            },
         };
         let Some(overlay) = &mut self.overlay else {
             return;
@@ -777,7 +784,8 @@ impl NativeApp {
     fn start_session(&mut self) {
         self.ui.state_index = Some(0);
         self.ui.positioning = false;
-        self.publish_instruction(jms::format_init(self.states[0]));
+        self.current_movement = None;
+        self.publish_instruction(gray_code::format_init(self.states[0]));
         self.apply_ui_to_overlay();
         self.request_control_redraw();
     }
@@ -785,6 +793,7 @@ impl NativeApp {
     fn restart_session(&mut self) {
         self.ui.state_index = None;
         self.ui.positioning = true;
+        self.current_movement = None;
         self.ui.instruction = "No instruction copied yet".into();
         self.apply_ui_to_overlay();
         self.request_control_redraw();
@@ -799,7 +808,8 @@ impl NativeApp {
             return;
         }
         let next = index + 1;
-        let instruction = jms::format_step(next, self.states[index], self.states[next]);
+        self.current_movement = Some(self.states[index].movement_to(self.states[next]));
+        let instruction = gray_code::format_move(next + 1, self.states[index], self.states[next]);
         self.ui.state_index = Some(next);
         self.publish_instruction(instruction);
         self.apply_ui_to_overlay();
@@ -811,15 +821,16 @@ impl NativeApp {
             return;
         };
         if index == 0 {
-            self.publish_instruction(jms::format_init(self.states[0]));
+            self.current_movement = None;
+            self.publish_instruction(gray_code::format_init(self.states[0]));
+            self.apply_ui_to_overlay();
+            self.request_control_redraw();
             return;
         }
         let previous = index - 1;
-        let instruction = if previous == 0 {
-            jms::format_init(self.states[0])
-        } else {
-            jms::format_step(previous, self.states[previous - 1], self.states[previous])
-        };
+        self.current_movement = Some(self.states[index].movement_to(self.states[previous]));
+        let instruction =
+            gray_code::format_move(previous + 1, self.states[index], self.states[previous]);
         self.ui.state_index = Some(previous);
         self.publish_instruction(instruction);
         self.apply_ui_to_overlay();

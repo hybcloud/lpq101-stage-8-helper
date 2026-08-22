@@ -77,7 +77,7 @@ pub fn draw_control(canvas: &HwndCanvas, ui: &ControlUi) -> Result<()> {
     canvas.begin(Color::rgb(0x171a21));
 
     canvas.text(
-        "ludi-pq-stage-8-tool · JMS Jump Guide",
+        "LPQ Stage 8 · Constant-weight Gray code",
         Rect::new(20.0, 15.0, 520.0, 45.0),
         Color::rgb(0xf2f5f8),
         TextStyle::Title,
@@ -86,11 +86,12 @@ pub fn draw_control(canvas: &HwndCanvas, ui: &ControlUi) -> Result<()> {
 
     let progress = match (ui.positioning, ui.state_index) {
         (true, _) => "Grayscale positioning mode · Drag or resize the overlay".to_owned(),
-        (false, None) => "Ready · Press Start to copy init".to_owned(),
-        (false, Some(0)) => format!("Current: init · 1/{}", ui.state_count),
-        (false, Some(index)) => {
-            format!("Current: step {index} · {}/{}", index + 1, ui.state_count)
-        }
+        (false, None) => "Ready · Press Start to copy the initial boxes".to_owned(),
+        (false, Some(index)) => format!(
+            "State {}/{} · Five occupied boxes",
+            index + 1,
+            ui.state_count
+        ),
     };
     canvas.text(
         &progress,
@@ -99,9 +100,38 @@ pub fn draw_control(canvas: &HwndCanvas, ui: &ControlUi) -> Result<()> {
         TextStyle::BodyBold,
         TextAlign::Left,
     );
+
+    canvas.text(
+        "GRAY Empty",
+        Rect::new(20.0, 72.0, 130.0, 92.0),
+        Color::rgb(0x9aa0a6),
+        TextStyle::Small,
+        TextAlign::Left,
+    );
+    canvas.text(
+        "BLUE Stay",
+        Rect::new(140.0, 72.0, 245.0, 92.0),
+        Color::rgb(0x35bce8),
+        TextStyle::Small,
+        TextAlign::Left,
+    );
+    canvas.text(
+        "RED Leave",
+        Rect::new(260.0, 72.0, 365.0, 92.0),
+        Color::rgb(0xff5a5f),
+        TextStyle::Small,
+        TextAlign::Left,
+    );
+    canvas.text(
+        "GREEN Enter",
+        Rect::new(380.0, 72.0, 520.0, 92.0),
+        Color::rgb(0x34d17a),
+        TextStyle::Small,
+        TextAlign::Left,
+    );
     canvas.text(
         &ui.instruction,
-        Rect::new(20.0, 77.0, 520.0, 111.0),
+        Rect::new(20.0, 94.0, 520.0, 116.0),
         Color::rgb(0x99a3b1),
         TextStyle::Small,
         TextAlign::Left,
@@ -123,7 +153,7 @@ pub fn draw_control(canvas: &HwndCanvas, ui: &ControlUi) -> Result<()> {
         if ui.state_index.is_some() {
             "Restart"
         } else {
-            "Start & Copy init"
+            "Start & Copy setup"
         },
         true,
     );

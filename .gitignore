@@ -1,1 +1,51 @@
-target
+# Rust build output
+/target/
+
+# Node.js dependencies
+/node_modules/
+
+# Logs and diagnostic reports
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Test coverage
+coverage/
+*.lcov
+.nyc_output/
+
+# JavaScript and TypeScript build output
+dist/
+out/
+*.tsbuildinfo
+/public/styles.css
+
+# Tool caches
+.npm/
+.eslintcache
+.stylelintcache
+.cache/
+.parcel-cache/
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Local agent instructions
+AGENTS.md
+
+# Cloudflare Wrangler local state and secrets
+.wrangler/
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
+
+# Operating-system files
+.DS_Store
+Thumbs.db

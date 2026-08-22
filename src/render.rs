@@ -140,7 +140,7 @@ impl TextFormats {
 
         unsafe {
             Ok(Self {
-                title: create(factory, 20.0, true)?,
+                title: create(factory, 28.0, true)?,
                 body: create(factory, 13.0, false)?,
                 body_bold: create(factory, 13.0, true)?,
                 small: create(factory, 11.0, false)?,

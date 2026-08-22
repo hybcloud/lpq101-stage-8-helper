@@ -1,0 +1,257 @@
+@import "tailwindcss";
+
+@source "../public/index.html";
+@source "../public/app.js";
+
+:root {
+	color-scheme: light;
+	font-family:
+		Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	background: #e8d5aa;
+}
+
+html {
+	min-width: 320px;
+	background: #e8d5aa;
+}
+
+body {
+	min-width: 320px;
+	min-height: 100dvh;
+	margin: 0;
+	background:
+		radial-gradient(circle at 50% -15%, rgb(181 137 0 / 0.16), transparent 38rem),
+		linear-gradient(180deg, #f2e4c2 0%, #e2c99a 100%);
+	color: #453327;
+}
+
+body.bg-slate-950 {
+	background:
+		radial-gradient(circle at 50% -15%, rgb(181 137 0 / 0.16), transparent 38rem),
+		linear-gradient(180deg, #f2e4c2 0%, #e2c99a 100%) !important;
+	color: #453327 !important;
+}
+
+button,
+input {
+	-webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+input:focus-visible {
+	outline: 2px solid #98452f;
+	outline-offset: 3px;
+}
+
+::selection {
+	background: #c9a45d;
+	color: #3e291e;
+}
+
+.stage-canvas {
+	aspect-ratio: 268 / 119;
+	image-rendering: pixelated;
+	image-rendering: crisp-edges;
+}
+
+#toast[data-visible="true"] {
+	transform: translateY(0);
+	opacity: 1;
+}
+
+@media (max-height: 680px) and (orientation: landscape) {
+	.room-shell {
+		padding-top: 0.75rem;
+		padding-bottom: 0.75rem;
+	}
+
+	.stage-frame {
+		max-width: min(74vh, 34rem);
+	}
+}
+
+/* Parchment UI: E-Hentai/NGA warmth with Solarized-like status colors. */
+.parchment,
+#app > div {
+	color: #453327;
+}
+
+.parchment section,
+#app > div > section {
+	border-color: #b99b67 !important;
+	background: rgb(248 237 207 / 0.94) !important;
+	box-shadow: 0 24px 60px rgb(92 55 28 / 0.18) !important;
+}
+
+.parchment .stage-frame,
+.parchment #instruction,
+.parchment #instruction + *,
+#join-form input {
+	border-color: #b99b67 !important;
+	background-color: rgb(230 210 166 / 0.55) !important;
+}
+
+.parchment h1,
+.parchment h2,
+.parchment .text-white,
+#app > div h1 {
+	color: #3e291e !important;
+}
+
+.parchment .text-slate-100,
+.parchment .text-slate-200,
+.parchment .text-slate-300,
+#app > div .text-slate-100,
+#app > div .text-slate-200,
+#app > div .text-slate-300 {
+	color: #523d2d !important;
+}
+
+.parchment .text-slate-400,
+.parchment .text-slate-500,
+#app > div .text-slate-400,
+#app > div .text-slate-500 {
+	color: #765d43 !important;
+}
+
+.parchment .text-slate-600,
+#app > div .text-slate-600 {
+	color: #927653 !important;
+}
+
+.parchment .border-slate-700,
+.parchment .border-slate-800,
+.parchment .border-slate-800\/90,
+#app > div .border-slate-700,
+#app > div .border-slate-800,
+#app > div .border-slate-800\/90 {
+	border-color: #b99b67 !important;
+}
+
+.parchment .bg-slate-800,
+.parchment .bg-slate-900,
+.parchment .bg-slate-900\/55,
+.parchment .bg-slate-900\/65,
+.parchment .bg-slate-950\/70,
+#app > div .bg-slate-800,
+#app > div .bg-slate-900 {
+	background-color: #e6d2a6 !important;
+}
+
+.parchment .bg-sky-500,
+#app > div .bg-sky-500 {
+	background-color: #8d402d !important;
+	color: #fff2d2 !important;
+}
+
+.parchment .bg-sky-500:hover,
+#app > div .bg-sky-500:hover {
+	background-color: #a34d35 !important;
+}
+
+.parchment .text-sky-300,
+#app > div .text-sky-300 {
+	color: #2c6d78 !important;
+}
+
+.parchment .text-sky-400,
+#app > div .text-sky-400 {
+	color: #8d402d !important;
+}
+
+.parchment .text-rose-300,
+#app > div .text-rose-300 {
+	color: #ad4635 !important;
+}
+
+.parchment .text-emerald-300,
+#app > div .text-emerald-300 {
+	color: #657d32 !important;
+}
+
+#connection {
+	border-color: #b99b67 !important;
+	background: rgb(242 226 190 / 0.9) !important;
+}
+
+#room-code {
+	border-color: #b58e55 !important;
+	background: #ead5a5 !important;
+	color: #513626 !important;
+	-webkit-text-fill-color: #513626;
+	caret-color: #8d402d;
+}
+
+#room-code:focus {
+	border-color: #98452f !important;
+	box-shadow: 0 0 0 3px rgb(152 69 47 / 0.18);
+}
+
+.room-code-label {
+	color: #513626 !important;
+}
+
+.join-button {
+	border-color: #9c543a;
+	background: #8d402d;
+	color: #fff2d2;
+	box-shadow: 0 8px 18px rgb(92 55 28 / 0.12);
+}
+
+.join-button:hover:not(:disabled) {
+	background: #a34d35;
+}
+
+.join-button:disabled {
+	border-color: #cfb57f;
+	background: #ead9b1;
+	color: #aa9068;
+	box-shadow: none;
+	opacity: 1;
+}
+
+.invite-button {
+	border-color: #b58e55;
+	background: #e6d2a6;
+	color: #684a35;
+}
+
+.invite-button:hover {
+	border-color: #9f7644;
+	background: #dac08b;
+	color: #4d3425;
+}
+
+.github-reference {
+	color: #765d43;
+	text-decoration: none;
+}
+
+.github-reference:hover {
+	color: #8d402d;
+	text-decoration: underline;
+	text-underline-offset: 0.22em;
+}
+
+.github-reference:focus-visible {
+	border-radius: 0.25rem;
+	outline: 2px solid #8d402d;
+	outline-offset: 0.2rem;
+}
+
+#toast {
+	border-color: #8f6b43 !important;
+	background: rgb(62 41 30 / 0.96) !important;
+	color: #fff1cf !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		scroll-behavior: auto !important;
+		transition-duration: 0.01ms !important;
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+	}
+}

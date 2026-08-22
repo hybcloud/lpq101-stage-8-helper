@@ -1,0 +1,30 @@
+{
+  "name": "lpq101-stage-8-helper",
+  "version": "0.3.0",
+  "private": true,
+  "homepage": "https://github.com/hybcloud/lpq101-stage-8-helper",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hybcloud/lpq101-stage-8-helper.git"
+  },
+  "scripts": {
+    "config:sync": "node ./scripts/sync-project-config.mjs",
+    "prebuild": "npm run config:sync",
+    "build": "npm run css:build && tsc --noEmit",
+    "predeploy": "npm run config:sync",
+    "deploy": "npm run build && wrangler deploy",
+    "predev": "npm run config:sync",
+    "dev": "npm run css:build && wrangler dev",
+    "start": "npm run dev",
+    "cf-typegen": "wrangler types",
+    "css:build": "tailwindcss -i ./web/styles.css -o ./public/styles.css --minify",
+    "css:watch": "tailwindcss -i ./web/styles.css -o ./public/styles.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "@types/node": "^26.2.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.5.2",
+    "wrangler": "^4.125.0"
+  }
+}

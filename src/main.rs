@@ -1,11 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 #[cfg(not(target_os = "windows"))]
-compile_error!("ludi-pq-stage-8-tool currently supports Windows only");
+compile_error!("lpq101-stage-8-helper currently supports Windows only");
 
 mod config;
 mod control;
 mod gray_code;
+mod online;
 mod overlay;
 mod platform;
 mod render;
@@ -15,9 +16,10 @@ use std::{cell::RefCell, collections::VecDeque, ffi::c_void, mem::size_of};
 use anyhow::{Context as _, Result};
 use config::SettingsStore;
 use control::{
-    ControlHit, ControlUi, PANEL_HEIGHT, PANEL_WIDTH, TOAST_HEIGHT, TOAST_WIDTH, draw_control,
-    draw_toast,
+    ControlHit, ControlUi, OnlineMode, PANEL_HEIGHT, PANEL_WIDTH, TOAST_HEIGHT, TOAST_WIDTH,
+    draw_control, draw_toast,
 };
+use online::{OnlineAction, OnlineClient, OnlineEvent, OnlineRole};
 use overlay::{OverlayImage, OverlayVisual};
 use platform::{GlobalHotkeys, HOTKEY_NEXT, HOTKEY_PREVIOUS, copy_to_clipboard};
 use render::{D2dContext, HwndCanvas, LayeredCanvas};
@@ -50,7 +52,7 @@ use windows::{
                 IsWindowVisible, KillTimer, LoadCursorW, MSG, PostQuitMessage, RegisterClassExW,
                 SW_HIDE, SW_SHOW, SW_SHOWNOACTIVATE, SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOMOVE,
                 SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SetCursor, SetTimer, SetWindowLongPtrW,
-                SetWindowPos, ShowWindow, TranslateMessage, WM_CAPTURECHANGED, WM_CLOSE,
+                SetWindowPos, ShowWindow, TranslateMessage, WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE,
                 WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_HOTKEY, WM_KEYDOWN, WM_LBUTTONDOWN,
                 WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOVE, WM_NCCREATE, WM_PAINT, WM_SIZE, WM_TIMER,
                 WNDCLASSEXW, WS_CAPTION, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
@@ -61,9 +63,10 @@ use windows::{
     core::{Error, w},
 };
 
-const WINDOW_CLASS: windows::core::PCWSTR = w!("LudiPqStage8ToolWindow");
+const WINDOW_CLASS: windows::core::PCWSTR = w!("Lpq101Stage8HelperWindow");
 const WM_MOUSELEAVE_NATIVE: u32 = 0x02a3;
 const TOAST_TIMER: usize = 0x4a4d_5401;
+const ONLINE_TIMER: usize = 0x4a4d_5402;
 
 type EventQueue = RefCell<VecDeque<AppEvent>>;
 
@@ -98,6 +101,7 @@ enum AppEvent {
     CaptureChanged(WindowKind),
     Hotkey(i32),
     KeyDown(u32),
+    Character(u16),
     Timer(WindowKind, usize),
     Close(WindowKind),
 }
@@ -194,6 +198,10 @@ unsafe extern "system" fn window_proc(
         }
         WM_KEYDOWN => {
             enqueue(AppEvent::KeyDown(wparam.0 as u32));
+            LRESULT(0)
+        }
+        WM_CHAR => {
+            enqueue(AppEvent::Character(wparam.0 as u16));
             LRESULT(0)
         }
         WM_TIMER => {
@@ -318,6 +326,8 @@ struct NativeApp {
     smoke_test: bool,
     settings: SettingsStore,
     hotkeys: Option<GlobalHotkeys>,
+    online: OnlineClient,
+    invite_url: Option<String>,
 }
 
 impl NativeApp {
@@ -337,7 +347,13 @@ impl NativeApp {
                 overlay_visible: settings.data.visible,
                 scale: settings.data.scale,
                 opacity: settings.data.opacity,
-                instruction: "No instruction copied yet".into(),
+                online_mode: OnlineMode::Offline,
+                online_connecting: false,
+                room_code: None,
+                room_code_input: String::new(),
+                room_code_focused: false,
+                online_status: "Online is optional · Host a room or enter a code to follow.".into(),
+                instruction: "Align the overlay, then press Start".into(),
                 hotkeys_enabled: false,
                 cursor: (0.0, 0.0),
                 hovered: None,
@@ -345,9 +361,12 @@ impl NativeApp {
             },
             states,
             current_movement: None,
-            smoke_test: std::env::var_os("LUDI_PQ_STAGE_8_TOOL_SMOKE_TEST").is_some(),
+            smoke_test: std::env::var_os("LPQ101_STAGE_8_HELPER_SMOKE_TEST").is_some()
+                || std::env::var_os("LUDI_PQ_STAGE_8_TOOL_SMOKE_TEST").is_some(),
             settings,
             hotkeys: None,
+            online: OnlineClient::new(),
+            invite_url: None,
         })
     }
 
@@ -367,6 +386,7 @@ impl NativeApp {
             if !self.smoke_test {
                 unsafe {
                     let _ = ShowWindow(control.hwnd, SW_SHOW);
+                    SetTimer(Some(control.hwnd), ONLINE_TIMER, 200, None);
                 }
                 self.request_control_redraw();
             }
@@ -397,7 +417,7 @@ impl NativeApp {
             CreateWindowExW(
                 ex_style,
                 WINDOW_CLASS,
-                w!("ludi-pq-stage-8-tool · Gray Code Overlay"),
+                w!("Ludibrium Party Quest · Stage 8 Helper"),
                 style,
                 CW_USEDEFAULT,
                 CW_USEDEFAULT,
@@ -437,7 +457,7 @@ impl NativeApp {
             CreateWindowExW(
                 WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST,
                 WINDOW_CLASS,
-                w!("ludi-pq-stage-8-tool · Stage 8 Overlay"),
+                w!("lpq101-stage-8-helper · Stage 8 Overlay"),
                 WS_POPUP,
                 position.x,
                 position.y,
@@ -477,7 +497,7 @@ impl NativeApp {
             CreateWindowExW(
                 WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST,
                 WINDOW_CLASS,
-                w!("ludi-pq-stage-8-tool · Gray Code Move"),
+                w!("lpq101-stage-8-helper · Gray Code Move"),
                 WS_POPUP,
                 0,
                 0,
@@ -573,7 +593,9 @@ impl NativeApp {
             AppEvent::KeyDown(key) if !self.ui.hotkeys_enabled && key == VK_NEXT.0 as u32 => {
                 self.next_step();
             }
+            AppEvent::Character(character) => self.room_code_character(character),
             AppEvent::Timer(WindowKind::Toast, TOAST_TIMER) => self.hide_toast(),
+            AppEvent::Timer(WindowKind::Control, ONLINE_TIMER) => self.poll_online(),
             AppEvent::Close(WindowKind::Control) => self.shutdown(),
             _ => {}
         }
@@ -724,6 +746,9 @@ impl NativeApp {
     }
 
     fn activate(&mut self, hit: ControlHit) {
+        if hit != ControlHit::RoomCode {
+            self.ui.room_code_focused = false;
+        }
         match hit {
             ControlHit::Previous => self.previous_step(),
             ControlHit::Start if self.ui.state_index.is_some() => self.restart_session(),
@@ -732,6 +757,26 @@ impl NativeApp {
             ControlHit::Position => self.ui.positioning = !self.ui.positioning,
             ControlHit::Reset => self.reset_overlay_position(),
             ControlHit::Visible => self.ui.overlay_visible = !self.ui.overlay_visible,
+            ControlHit::Host
+                if self.ui.online_connecting || self.ui.online_mode != OnlineMode::Offline =>
+            {
+                self.leave_online()
+            }
+            ControlHit::Host => self.host_online(),
+            ControlHit::RoomCode
+                if !self.ui.online_connecting && self.ui.online_mode == OnlineMode::Offline =>
+            {
+                self.ui.room_code_focused = true;
+            }
+            ControlHit::Join if self.ui.online_mode == OnlineMode::Host => self.copy_invite(),
+            ControlHit::Join
+                if !self.ui.online_connecting
+                    && self.ui.online_mode == OnlineMode::Offline
+                    && self.ui.room_code_input.len() == 4 =>
+            {
+                self.join_online()
+            }
+            ControlHit::RoomCode | ControlHit::Join => {}
             ControlHit::Scale | ControlHit::Opacity => {}
         }
         self.apply_ui_to_overlay();
@@ -782,24 +827,35 @@ impl NativeApp {
     }
 
     fn start_session(&mut self) {
+        if self.ui.online_mode == OnlineMode::Viewer {
+            return;
+        }
         self.ui.state_index = Some(0);
         self.ui.positioning = false;
         self.current_movement = None;
+        self.online.send(OnlineAction::Sync(0));
         self.publish_instruction(gray_code::format_init(self.states[0]));
         self.apply_ui_to_overlay();
         self.request_control_redraw();
     }
 
     fn restart_session(&mut self) {
+        if self.ui.online_mode == OnlineMode::Viewer {
+            return;
+        }
         self.ui.state_index = None;
         self.ui.positioning = true;
         self.current_movement = None;
-        self.ui.instruction = "No instruction copied yet".into();
+        self.ui.instruction = "Align the overlay, then press Start".into();
+        self.online.send(OnlineAction::Reset);
         self.apply_ui_to_overlay();
         self.request_control_redraw();
     }
 
     fn next_step(&mut self) {
+        if self.ui.online_mode == OnlineMode::Viewer {
+            return;
+        }
         let Some(index) = self.ui.state_index else {
             self.start_session();
             return;
@@ -811,12 +867,16 @@ impl NativeApp {
         self.current_movement = Some(self.states[index].movement_to(self.states[next]));
         let instruction = gray_code::format_move(next + 1, self.states[index], self.states[next]);
         self.ui.state_index = Some(next);
+        self.online.send(OnlineAction::Next);
         self.publish_instruction(instruction);
         self.apply_ui_to_overlay();
         self.request_control_redraw();
     }
 
     fn previous_step(&mut self) {
+        if self.ui.online_mode == OnlineMode::Viewer {
+            return;
+        }
         let Some(index) = self.ui.state_index else {
             return;
         };
@@ -832,6 +892,7 @@ impl NativeApp {
         let instruction =
             gray_code::format_move(previous + 1, self.states[index], self.states[previous]);
         self.ui.state_index = Some(previous);
+        self.online.send(OnlineAction::Previous);
         self.publish_instruction(instruction);
         self.apply_ui_to_overlay();
         self.request_control_redraw();
@@ -845,6 +906,156 @@ impl NativeApp {
             Err(_) => format!("Clipboard unavailable · {instruction}"),
         };
         self.show_toast(toast);
+    }
+
+    fn host_online(&mut self) {
+        let owner_guid = self
+            .settings
+            .data
+            .owner_guid
+            .get_or_insert_with(|| uuid::Uuid::new_v4().to_string())
+            .clone();
+        self.save_settings();
+        self.ui.online_mode = OnlineMode::Host;
+        self.ui.online_connecting = true;
+        self.ui.room_code = None;
+        self.ui.room_code_focused = false;
+        self.ui.online_status = "Creating or restoring your room…".into();
+        self.invite_url = None;
+        self.online.host(
+            online_service_url(),
+            owner_guid,
+            self.ui.state_index.unwrap_or(0),
+        );
+    }
+
+    fn join_online(&mut self) {
+        let code = self.ui.room_code_input.clone();
+        self.ui.online_mode = OnlineMode::Viewer;
+        self.ui.online_connecting = true;
+        self.ui.room_code = Some(code.clone());
+        self.ui.room_code_focused = false;
+        self.ui.positioning = false;
+        self.ui.online_status = format!("Joining room {code} as a viewer…");
+        self.invite_url = None;
+        self.online.view(online_service_url(), code);
+    }
+
+    fn leave_online(&mut self) {
+        self.online.disconnect();
+        self.ui.online_mode = OnlineMode::Offline;
+        self.ui.online_connecting = false;
+        self.ui.room_code = None;
+        self.ui.online_status =
+            "Online is optional · Host a room or enter a code to follow.".into();
+        self.invite_url = None;
+    }
+
+    fn poll_online(&mut self) {
+        let events = self.online.poll().collect::<Vec<_>>();
+        if events.is_empty() {
+            return;
+        }
+        for event in events {
+            match event {
+                OnlineEvent::Connected {
+                    role,
+                    code,
+                    invite_url,
+                } => {
+                    self.ui.online_connecting = false;
+                    self.ui.online_mode = match role {
+                        OnlineRole::Host => OnlineMode::Host,
+                        OnlineRole::Viewer => OnlineMode::Viewer,
+                    };
+                    self.ui.room_code = Some(code.clone());
+                    self.ui.room_code_input = code.clone();
+                    self.invite_url = invite_url.clone();
+                    match role {
+                        OnlineRole::Host => {
+                            self.ui.online_status =
+                                format!("Room {code} · Native controls are synced to viewers.");
+                            if let Some(invite_url) = invite_url {
+                                let owner = self.control.as_ref().map(|control| control.hwnd);
+                                let copied = copy_to_clipboard(owner, &invite_url).is_ok();
+                                self.show_toast(if copied {
+                                    format!("Room {code} · Viewer invite copied")
+                                } else {
+                                    format!("Room {code} · Clipboard unavailable")
+                                });
+                            }
+                        }
+                        OnlineRole::Viewer => {
+                            self.ui.online_status =
+                                format!("Room {code} · Viewer mode · Controlled by the owner.");
+                        }
+                    }
+                }
+                OnlineEvent::State {
+                    index,
+                    movement,
+                    instruction,
+                } if self.ui.online_mode == OnlineMode::Viewer && index < self.states.len() => {
+                    self.ui.state_index = Some(index);
+                    self.current_movement = movement.map(|movement| gray_code::Movement {
+                        from_box: movement.from_box,
+                        to_box: movement.to_box,
+                    });
+                    self.ui.instruction = instruction;
+                    self.apply_ui_to_overlay();
+                }
+                OnlineEvent::State { .. } => {}
+                OnlineEvent::Error(message) => {
+                    self.online.disconnect();
+                    self.ui.online_mode = OnlineMode::Offline;
+                    self.ui.online_connecting = false;
+                    self.ui.room_code = None;
+                    self.ui.online_status = message.clone();
+                    self.invite_url = None;
+                    self.show_toast(message);
+                }
+            }
+        }
+        self.request_control_redraw();
+    }
+
+    fn copy_invite(&mut self) {
+        let Some(invite_url) = self.invite_url.clone() else {
+            return;
+        };
+        let owner = self.control.as_ref().map(|control| control.hwnd);
+        let copied = copy_to_clipboard(owner, &invite_url).is_ok();
+        self.show_toast(if copied {
+            "Viewer invite copied".into()
+        } else {
+            "Clipboard unavailable".into()
+        });
+    }
+
+    fn room_code_character(&mut self, character: u16) {
+        if !self.ui.room_code_focused
+            || self.ui.online_connecting
+            || self.ui.online_mode != OnlineMode::Offline
+        {
+            return;
+        }
+        match character {
+            8 => {
+                self.ui.room_code_input.pop();
+            }
+            13 if self.ui.room_code_input.len() == 4 => self.join_online(),
+            _ if self.ui.room_code_input.len() < 4 => {
+                let Some(value) = char::from_u32(character as u32) else {
+                    return;
+                };
+                let value = value.to_ascii_uppercase();
+                if value.is_ascii_uppercase() || value.is_ascii_digit() {
+                    self.ui.room_code_input.push(value);
+                }
+            }
+            _ => {}
+        }
+        self.request_control_redraw();
     }
 
     fn show_toast(&mut self, message: String) {
@@ -970,6 +1181,7 @@ impl NativeApp {
         self.remember_overlay_position();
         self.save_settings();
         self.hotkeys.take();
+        self.online.disconnect();
         unsafe {
             if let Some(toast) = &self.toast {
                 let _ = DestroyWindow(toast.hwnd);
@@ -978,10 +1190,18 @@ impl NativeApp {
                 let _ = DestroyWindow(overlay.hwnd);
             }
             if let Some(control) = &self.control {
+                let _ = KillTimer(Some(control.hwnd), ONLINE_TIMER);
                 let _ = DestroyWindow(control.hwnd);
             }
         }
     }
+}
+
+fn online_service_url() -> String {
+    std::env::var("LPQ_SERVICE_URL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| config::service_origin().to_owned())
 }
 
 fn add_context(
